@@ -11,6 +11,7 @@
  ******************************************************************************/
 
 #include "rmagick.h"
+#include "ruby/thread.h"
 #include <signal.h>
 
 #define BEGIN_CHANNEL_MASK(image, channels) \
@@ -13950,6 +13951,18 @@ Image_tint(int argc, VALUE *argv, VALUE self)
     return rm_image_new(new_image);
 }
 
+struct blob_arguments
+{
+    Info* info;
+    Image* image;
+    size_t* length;
+    ExceptionInfo *exception;
+};
+
+void* ImageToBlob_no_gvl(void* args) {
+  struct blob_arguments *blob_args = (struct blob_arguments *)args;
+  return ImageToBlob(blob_args->info, blob_args->image, blob_args->length, blob_args->exception);
+}
 
 /**
  * Return a "blob" (a String) from the image.
@@ -14023,7 +14036,13 @@ Image_to_blob(VALUE self)
 
     rm_sync_image_options(image, info);
 
-    blob = ImageToBlob(info, image, &length, exception);
+    struct blob_arguments args;
+    args.info = info;
+    args.image = image;
+    args.exception = exception;
+    args.length = &length;
+
+    blob = rb_thread_call_without_gvl(ImageToBlob_no_gvl, &args, RUBY_UBF_PROCESS, NULL);
     CHECK_EXCEPTION();
 
     DestroyExceptionInfo(exception);

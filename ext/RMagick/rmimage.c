@@ -11073,6 +11073,18 @@ void sig_handler(int sig ATTRIBUTE_UNUSED)
 }
 #endif
 
+struct rd_image_args
+{
+    Info *info;
+    ExceptionInfo *exception;
+    reader_t *reader;
+};
+
+void* rd_image_no_gvl(void* args) {
+    struct rd_image_args *image_args = (struct rd_image_args *)args;
+    return (image_args->reader)(image_args->info, image_args->exception);
+}
+
 static VALUE
 rd_image(VALUE class ATTRIBUTE_UNUSED, VALUE file, reader_t reader)
 {
@@ -11125,7 +11137,11 @@ rd_image(VALUE class ATTRIBUTE_UNUSED, VALUE file, reader_t reader)
     }
 #endif
 
-    images = (reader)(info, exception);
+    struct rd_image_args args;
+    args.info = info;
+    args.exception = exception;
+    args.reader = reader;
+    images = rb_thread_call_without_gvl(rd_image_no_gvl, &args, RUBY_UBF_IO, NULL);
 
 #if defined(__APPLE__) || defined(__FreeBSD__)
     if (sigaction(SIGCHLD, &oldact, NULL) < 0)
